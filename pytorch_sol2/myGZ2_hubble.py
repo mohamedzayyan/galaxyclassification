@@ -158,7 +158,7 @@ class GZ2_hubble:
             f1 = f1_score(args, args_act, average='macro')
         if f1_ == 'weighted':
             f1 = f1_score(args, args_act, average='weighted')
-        print('Unseen + ' + f1_ + ' f1 score: {}'.format(f1))
+        print('Unseen ' + f1_ + ' f1 score: {}'.format(f1))
         if cf_type == 'numbers':
             print("Confusion matrix:\n%s" % cf)
         if cf_type == 'percentages':
