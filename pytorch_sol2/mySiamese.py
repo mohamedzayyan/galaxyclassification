@@ -30,11 +30,10 @@ import matplotlib.pyplot as plt
 import random
 
 class mySiamese:
-    def __init__(self,train_dl, val_dl, unseen_dl, margin=0.2, lr=0.000001, outputSize=37,
-                 modelType='triplet', modelPath='./gz2_resnet50', device='cuda', BATCH_SIZE=64):
+    def __init__(self,train_dl, val_dl, unseen_dl, model, optimizer, scheduler, mining='hard', margin=0.2, outputSize=37,
+                 modelType='triplet', device='cuda', BATCH_SIZE=64):
         
         self.margin = margin
-        self.modelPath = modelPath
         self.modelType = modelType
         self.device = device
         self.train_dl = train_dl
@@ -42,8 +41,12 @@ class mySiamese:
         self.unseen_dl = unseen_dl
         self.modeltype = modelType
         self.BATCH_SIZE = BATCH_SIZE
-        self.lr=lr
+        self.model = model
+        self.optimizer = optimizer
+        self.scheduler = scheduler
         self.outputSize = outputSize
+        self.mining = mining
+
 	
     def genTriplets(self, batch):
         batch_size = batch['image'].shape[0]
@@ -95,6 +98,46 @@ class mySiamese:
         batch_img_negative = torch.from_numpy(batch_img_negative).float()  # convert the numpy array into torch tensor
         
         return batch_img_anchor, batch_img_positive, batch_img_negative, batch_label_anchor, batch_label_positive, batch_label_negative
+    
+    def hardTriplets(self, batch_img_anchor, batch_img_positive, batch_img_negative, batch_label_anchor, 
+                 batch_label_positive, batch_label_negative):
+        batch_size = batch_img_anchor.shape[0]
+        im_width = batch_img_anchor.shape[2]
+        in_channels = batch_img_anchor.shape[1]
+        im_height = batch_img_anchor.shape[3]
+        
+        hard_anchors_img = torch.empty((0, in_channels,im_width,im_height))
+        hard_positives_img = torch.empty((0, in_channels,im_width,im_height))
+        hard_negatives_img = torch.empty((0, in_channels,im_width,im_height))
+        
+        hard_anchors_label = torch.empty((0, 1))
+        hard_positives_label = torch.empty((0, 1))
+        hard_negatives_label = torch.empty((0, 1))
+        
+        d = nn.PairwiseDistance(p=2)
+        for i in range(batch_size):
+            features_a = self.model(batch_img_anchor[i].reshape((-1, in_channels, im_width, im_height)).cuda())
+            features_p = self.model(batch_img_positive[i].reshape((-1, in_channels, im_width, im_height)).cuda())
+            features_n = self.model(batch_img_negative[i].reshape((-1, in_channels, im_width, im_height)).cuda())
+            
+            d_p = d(features_a, features_p)
+            d_n = d(features_a, features_n)
+            
+            if d_p >= d_n:
+                hard_anchors_img = torch.cat((hard_anchors_img, batch_img_anchor[i].reshape((-1, in_channels, im_width, im_height))), 0)
+                hard_positives_img = torch.cat((hard_positives_img, batch_img_positive[i].reshape((-1, in_channels, im_width, im_height))), 0)
+                hard_negatives_img = torch.cat((hard_negatives_img, batch_img_negative[i].reshape((-1, in_channels, im_width, im_height))), 0)
+                
+                hard_anchors_label = torch.cat((hard_anchors_label, batch_label_anchor[i].reshape((-1, 1)).float()), 0)
+                hard_positives_label = torch.cat((hard_positives_label, batch_label_positive[i].reshape((-1, 1)).float()), 0)
+                hard_negatives_label = torch.cat((hard_negatives_label, batch_label_negative[i].reshape((-1, 1)).float()), 0)
+            
+            del features_a
+            del features_p
+            del features_n
+            torch.cuda.empty_cache()
+    
+        return hard_anchors_img, hard_positives_img, hard_negatives_img, hard_anchors_label, hard_positives_label, hard_negatives_label
     
     def genPair(self, batch):
         batch_size = batch['image'].shape[0]
@@ -153,18 +196,70 @@ class mySiamese:
         #batch_img_2 = Variable(batch_img_2).cuda()           # create a torch variable and transfer it into GPU
         return batch_img_1, batch_img_2, batch_label_1, batch_label_2, batch_label_c
     
+    def hardPairs(self, img_1, img_2, label_1, label_2, 
+                 label_c):
+        batch_size = img_1.shape[0]
+        im_width = img_1.shape[2]
+        in_channels = img_1.shape[1]
+        im_height = img_1.shape[3]
+        
+        hard_img_1 = torch.empty((0, in_channels,im_width,im_height))
+        hard_img_2 = torch.empty((0, in_channels,im_width,im_height))
+        
+        hard_label_1 = torch.empty((0, 1))
+        hard_label_2 = torch.empty((0, 1))
+        hard_label_c = torch.empty((0, 1))
+        
+        d = nn.PairwiseDistance(p=2)
+        for i in range(0, batch_size, 2):
+            features_a = self.model(img_1[i].reshape((-1, in_channels, im_width, im_height)).cuda())
+            features_p = self.model(img_2[i].reshape((-1, in_channels, im_width, im_height)).cuda())
+            features_n = self.model(img_2[i+1].reshape((-1, in_channels, im_width, im_height)).cuda())
+            
+            d_p = d(features_a, features_p)
+            d_n = d(features_a, features_n)
+            
+            if d_p >= d_n:
+                hard_img_1 = torch.cat((hard_img_1, img_1[i].reshape((-1, in_channels, im_width, im_height))), 0)
+                hard_img_1 = torch.cat((hard_img_1, img_1[i+1].reshape((-1, in_channels, im_width, im_height))), 0)
+    
+                hard_img_2 = torch.cat((hard_img_2, img_2[i].reshape((-1, in_channels, im_width, im_height))), 0)
+                hard_img_2 = torch.cat((hard_img_2, img_2[i+1].reshape((-1, in_channels, im_width, im_height))), 0)
+                
+                hard_label_1 = torch.cat((hard_label_1, label_1[i].reshape((-1, 1)).float()), 0)
+                hard_label_1 = torch.cat((hard_label_1, label_1[i+1].reshape((-1, 1)).float()), 0)
+                
+                hard_label_2 = torch.cat((hard_label_2, label_2[i].reshape((-1, 1)).float()), 0)
+                hard_label_2 = torch.cat((hard_label_2, label_2[i+1].reshape((-1, 1)).float()), 0)
+                
+                hard_label_c = torch.cat((hard_label_c, label_c[i].reshape((-1, 1)).float()), 0)
+                hard_label_c = torch.cat((hard_label_c, label_c[i+1].reshape((-1, 1)).float()), 0)
+            
+            del features_a
+            del features_p
+            del features_n
+            torch.cuda.empty_cache()
+    
+        return hard_img_1, hard_img_2, hard_label_1, hard_label_2, hard_label_c
+    
     def triplet_loss(self, a, p, n) : 
         d = nn.PairwiseDistance(p=2)
         distance = d(a, p) - d(a, n) + self.margin 
         loss = torch.mean(torch.max(distance, torch.zeros_like(distance))) 
         return loss
+    def contrastive_loss(self, features_1, features_2, label_c):
+        d = nn.PairwiseDistance(p=2)
+        distance = d(features_1, features_2)
+        loss_contrastive = torch.mean(0.5*(label_c) * distance +
+                                         0.5* (1-label_c) *(torch.clamp(self.margin - distance, min=0.0)))
+        return loss_contrastive
     
-    def  train_network(self,model, optimizer, scheduler, first_images, second_images, first_labels, second_labels, c_labels, sample_size, tr='train'):
+    def  train_network(self, first_images, second_images, first_labels, second_labels, c_labels, sample_size, tr='train'):
         loss_log = []    
         if tr == 'train':
-            model.train()
+            self.model.train()
         elif tr == 'val':
-            model.eval()
+            self.model.eval()
         for i in range(0, sample_size, self.BATCH_SIZE):
             img_1 = first_images[i: i + self.BATCH_SIZE].cuda()
             img_2 = second_images[i: i + self.BATCH_SIZE].cuda()
@@ -173,19 +268,20 @@ class mySiamese:
             label_c = c_labels[i: i + self.BATCH_SIZE].cuda()
             
             # Reset gradients
-            optimizer.zero_grad()
+            self.optimizer.zero_grad()
     
             # Forward pass
-            features_1 = model(img_1)
-            features_2 = model(img_2)
+            features_1 = self.model(img_1)
+            features_2 = self.model(img_2)
     
             cos = nn.CosineSimilarity(dim=1, eps=1e-6)
             #euclidean_distance = cos(features_1, features_2)
-            euclidean_distance = F.pairwise_distance(features_1, features_2)
+            #euclidean_distance = F.pairwise_distance(features_1, features_2)
             #loss_contrastive = 0.5 * torch.mean((1 - label_c) * torch.pow(euclidean_distance, 2) +
             #                              label_c * torch.pow(torch.clamp(self.margin - euclidean_distance, min=0.0), 2))
-            loss_contrastive = torch.mean(0.5*(label_c) * euclidean_distance +
-                                         0.5* (1-label_c) *(torch.clamp(self.margin - euclidean_distance, min=0.0)))
+            loss_contrastive = self.contrastive_loss(features_1, features_2, label_c)
+            #torch.mean(0.5*(label_c) * euclidean_distance +
+            #                            0.5* (1-label_c) *(torch.clamp(self.margin - euclidean_distance, min=0.0)))
     
             loss_log.append(float(loss_contrastive.data))
             #print('\nepoch: {} - batch: {}'.format(ep, counter))
@@ -193,7 +289,7 @@ class mySiamese:
             
             # Backward pass and updates
             loss_contrastive.backward()                     # calculate the gradients (backpropagation)
-            optimizer.step()                    # update the weights
+            self.optimizer.step()                    # update the weights
             del img_1
             del img_2
             del label_1
@@ -203,13 +299,13 @@ class mySiamese:
         epoch_loss = sum(loss_log)/len(loss_log)
         return epoch_loss
     
-    def  train_network_triplets(self,model, optimizer, scheduler, anchors, positives, negatives, anchor_labels,
+    def  train_network_triplets(self,anchors, positives, negatives, anchor_labels,
                             positive_labels, negative_labels, sample_size, tr='train'):
         loss_log = []    
         if tr == 'train':
-            model.train()
+            self.model.train()
         elif tr == 'val':
-            model.eval()
+            self.model.eval()
         for i in range(0, sample_size, self.BATCH_SIZE):
             a = anchors[i: i + self.BATCH_SIZE].cuda()
             p = positives[i: i + self.BATCH_SIZE].cuda()
@@ -220,12 +316,12 @@ class mySiamese:
             label_n = negative_labels[i: i + self.BATCH_SIZE].cuda()
             
             # Reset gradients
-            optimizer.zero_grad()
+            self.optimizer.zero_grad()
     
             # Forward pass
-            features_a = F.normalize(model(a), p=2)
-            features_p = F.normalize(model(p), p =2)
-            features_n = F.normalize(model(n), p=2)
+            features_a = self.model(a)
+            features_p = self.model(p)
+            features_n = self.model(n)
     
             t_loss = self.triplet_loss(features_a, features_p, features_n)
     
@@ -235,7 +331,7 @@ class mySiamese:
             
             # Backward pass and updates
             t_loss.backward()                     # calculate the gradients (backpropagation)
-            optimizer.step()                    # update the weights
+            self.optimizer.step()                    # update the weights
             del a
             del p
             del n
@@ -250,54 +346,68 @@ class mySiamese:
         return epoch_loss
     
     def train(self, epochs=5):
-        model = torch.load(self.modelPath)
         if self.outputSize != 37:
-            model.fc[3] = nn.Linear(512, self.outputSize)
-        model = model.to(self.device)
-        #optimizer = optim.SGD(model.parameters(), lr=self.lr, weight_decay=0.00005)
-        optimizer = optim.Adam(model.parameters(), lr=self.lr, weight_decay=0.00005)
-        scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, 'min',patience=5,threshold=0.0001,factor=0.1, 
-                                                   verbose=True)
-        #optimizer = optim.Adam(model.parameters(), lr=0.00001, weight_decay=0.00005)
+            self.model.fc[3] = nn.Linear(512, self.outputSize)
+        self.model = self.model.to(self.device)
         if self.modelType == 'triplet':
             for i, batch in enumerate(self.train_dl):  # batches loop
-                #train_img_1, train_img_2, train_label_1, train_label_2, train_label_c = genPair(batch)
                 self.train_img_anchor, self.train_img_positve, self.train_img_negative, self.train_label_anchor, self.train_label_positive, self.train_label_negative = self.genTriplets(batch)
-           
+                
             for i, batch in enumerate(self.val_dl):  # batches loop
                 self.val_img_anchor, self.val_img_positive, self.val_img_negative, self.val_label_anchor, self.val_label_positive, self.val_label_negative = self.genTriplets(batch)
             
-            self.val_sample_size = self.val_img_anchor.shape[0]
-            self.train_sample_size = self.train_img_anchor.shape[0]
+            if self.mining == 'random':
+                self.val_sample_size = self.val_img_anchor.shape[0]
+                self.train_sample_size = self.train_img_anchor.shape[0]
+            if self.mining == 'hard':
+                self.train_hard_anchors_img, self.train_hard_positives_img, self.train_hard_negatives_img, self.train_hard_anchors_labels, self.train_hard_positives_label, self.train_hard_negatives_label = self.hardTriplets(self.train_img_anchor, self.train_img_positve, self.train_img_negative, self.train_label_anchor, self.train_label_positive, self.train_label_negative)
+                self.val_hard_anchors_img, self.val_hard_positives_img, self.val_hard_negatives_img, self.val_hard_anchors_labels, self.val_hard_positives_label, self.val_hard_negatives_label = self.hardTriplets(self.val_img_anchor, self.val_img_positive, self.val_img_negative, self.val_label_anchor, self.val_label_positive, self.val_label_negative)
+                
+                self.train_sample_size = self.train_hard_anchors_img.shape[0]
+                self.val_sample_size = self.val_hard_anchors_img.shape[0]
             train_losses=[]
             val_losses=[]
             counter = 0
-            pth = './siameseEfigi_triplet/efigicheckpoint'
+            pth = './siameseEfigiTriplet/efigicheckpoint'
             early_stopping = EarlyStopping(patience=10, verbose=True, path=pth)
+            
             print("Training starting")
             for ep in range(epochs):  # epochs loop
                 counter += 1
-                train_loss = self.train_network_triplets(model, optimizer, scheduler, self.train_img_anchor, self.train_img_positve, self.train_img_negative,
+                if self.mining == 'random':
+                    train_loss = self.train_network_triplets(self.train_img_anchor, self.train_img_positve, self.train_img_negative,
                                                    self.train_label_anchor, self.train_label_positive,
                                                     self.train_label_negative, self.train_sample_size, tr='train' )
-                train_losses.append(train_loss)
-                    
-                
-                val_loss = self.train_network_triplets(model, optimizer, scheduler, self.val_img_anchor, self.val_img_positive, self.val_img_negative, self.val_label_anchor,
+                    val_loss = self.train_network_triplets(self.val_img_anchor, self.val_img_positive, self.val_img_negative, self.val_label_anchor,
                                                  self.val_label_positive, self.val_label_negative, self.val_sample_size, tr='val')
+                    
+                if self.mining == 'hard':
+                    train_loss = self.train_network_triplets(self.train_hard_anchors_img, self.train_hard_positives_img, self.train_hard_negatives_img,
+                                                             self.train_hard_anchors_labels, self.train_hard_positives_label, 
+                                                             self.train_hard_negatives_label, self.train_sample_size, tr='train' )
+                    val_loss = self.train_network_triplets(self.val_hard_anchors_img, self.val_hard_positives_img, self.val_hard_negatives_img, 
+                                                           self.val_hard_anchors_labels, self.val_hard_positives_label, self.val_hard_negatives_label , 
+                                                           self.val_sample_size, tr='val')
+                    
+                train_losses.append(train_loss)
                 val_losses.append(val_loss)
-                scheduler.step(val_loss) 
+                self.scheduler.step(val_loss) 
                     
                 print('\nepoch: {}'.format(ep))
                 print('Train loss: {}, Val loss: {}'.format(train_loss, val_loss) )
                 
-                early_stopping(val_loss, model, ep)
+                early_stopping(val_loss, self.model, ep)
                 if early_stopping.early_stop:
+                    ep = ep - 10
+                    self.model.load_state_dict(torch.load('./siameseEfigiTriplet/efigicheckpoint{}.pt'.format(ep)))
                     print("Early stopping")
                     break
-                pickle.dump(train_losses,open('./triplet_train_losses_siamese_efigi','wb'))
-                pickle.dump(val_losses,open('./triplet_val_losses_siamese_efigi','wb'))
+                pickle.dump(train_losses,open('./losses/triplet_train_losses_siamese_efigi','wb'))
+                pickle.dump(val_losses,open('./losses/triplet_val_losses_siamese_efigi','wb'))
+            
             print("Training complete")  
+            torch.save(self.model, './models/efigiSiameseTriplet')
+            print('Model saved: ./models/efigiSiameseTriplet')
             
         elif self.modelType == 'pair':
             for i, batch in enumerate(self.train_dl):  # batches loop
@@ -306,93 +416,73 @@ class mySiamese:
             for i, batch in enumerate(self.val_dl):  # batches loop
                 self.val_img_1, self.val_img_2, self.val_label_1, self.val_label_2, self.val_label_c = self.genPair(batch)
                 
-            self.val_sample_size = self.val_img_1.shape[0]
-            self.train_sample_size = self.train_img_1.shape[0]
+            if self.mining == 'random':
+                self.val_sample_size = self.val_img_1.shape[0]
+                self.train_sample_size = self.train_img_1.shape[0]
+            if self.mining == 'hard':
+                self.train_hard_img_1, self.train_hard_img_2, self.train_hard_label_1, self.train_hard_label_2, self.train_hard_label_c = self.hardPairs(self.train_img_1, self.train_img_2, self.train_label_1, self.train_label_2, self.train_label_c)
+                self.val_hard_img_1, self.val_hard_img_2, self.val_hard_label_1, self.val_hard_label_2, self.val_hard_label_c = self.hardPairs(self.val_img_1, self.val_img_2, self.val_label_1, self.val_label_2, self.val_label_c)
+                
+                self.val_sample_size = self.val_hard_img_1.shape[0]
+                self.train_sample_size = self.train_hard_img_1.shape[0]
             train_losses=[]
             val_losses=[]
             counter = 0
-            pth = './siameseEfigi_pair/efigicheckpoint'
+            pth = './siameseEfigiPair/efigicheckpoint'
             early_stopping = EarlyStopping(patience=10, verbose=True, path=pth)
             print("Training starting")
             for ep in range(epochs):  # epochs loop
                 counter += 1
                 #train_loss = train_network(train_img_1, train_img_2, train_label_1, 
                 #                               train_label_2, train_label_c, train_sample_size)
-                train_loss = self.train_network(model, optimizer, scheduler, self.train_img_1, self.train_img_2, self.train_label_1,
+                if self.mining == 'random':
+                    train_loss = self.train_network(self.train_img_1, self.train_img_2, self.train_label_1,
                                                 self.train_label_2, self.train_label_c, self.train_sample_size, tr='train')
-                train_losses.append(train_loss)
+                                    
+                    val_loss = self.train_network(self.val_img_1, self.val_img_2, self.val_label_1, 
+                                             self.val_label_2, self.val_label_c, self.val_sample_size, tr='val')
+                
+                if self.mining == 'hard':
+                    train_loss = self.train_network(self.train_hard_img_1, self.train_hard_img_2, self.train_hard_label_1, self.train_hard_label_2, 
+                                                    self.train_hard_label_c, self.train_sample_size, tr='train')
+                                    
+                    val_loss = self.train_network(self.val_hard_img_1, self.val_hard_img_2, self.val_hard_label_1, self.val_hard_label_2, 
+                                                  self.val_hard_label_c, self.val_sample_size,  tr='val')
                     
-                val_loss = self.train_network(model, optimizer, scheduler, self.val_img_1, self.val_img_2, self.val_label_1, 
-                                             self.val_label_2, self.val_label_c, self.val_sample_size)
+                train_losses.append(train_loss)
                 val_losses.append(val_loss)
-                scheduler.step(val_loss) 
+                self.scheduler.step(val_loss) 
                     
                 print('\nepoch: {}'.format(ep))
                 print('Train loss: {}, Val loss: {}'.format(train_loss, val_loss) )
                 
-                early_stopping(val_loss, model, ep)
+                early_stopping(val_loss, self.model, ep)
                 if early_stopping.early_stop:
+                    ep = ep - 10
+                    self.model.load_state_dict(torch.load('./siameseEfigiPair/efigicheckpoint{}.pt'.format(ep)))
                     print("Early stopping")
                     break
-                pickle.dump(train_losses,open('./pair_train_losses_siamese_efigi','wb'))
-                pickle.dump(val_losses,open('./pair_val_losses_siamese_efigi','wb'))
+                pickle.dump(train_losses,open('./losses/pair_train_losses_siamese_efigi','wb'))
+                pickle.dump(val_losses,open('./losses/pair_val_losses_siamese_efigi','wb'))
             print("Training complete")
+            torch.save(self.model, './models/efigiSiamesePair')
+            print('Model saved: ./models/efigiSiamesePair')
             
         plt.plot(train_losses, label='Training loss')
         plt.plot(val_losses, label='Validation loss')
         plt.legend(frameon=False)
         plt.show()
-            
-        return model
+        
     
-    def evaluate(self, epochs=5):
-        self.model = self.train(epochs=epochs)
+    def evaluate(self):
         if self.modelType == 'triplet':
             print('Evaluation beginning')
             n = len(self.unseen_dl.dataset.subset)
             m = self.train_sample_size
-            distMatrix = torch.empty((n, m))
-            predLabels = torch.empty((n, 1))
-            actLabels = torch.empty((0, 1))
-            trainPreds = torch.empty((0, self.outputSize))
-            cos = nn.CosineSimilarity(dim=1, eps=1e-6)
-            d = nn.PairwiseDistance(p=2)
-            #euclidean_distance = cos(features_1, features_2)
-            self.model.eval()
-            for i, batch in enumerate(self.unseen_dl):
-                with torch.no_grad():
-                    testPreds = F.normalize(self.model(batch['image'].cuda()), p=2)
-                    #actLabels = torch.argmax(batch['labels'], 1).float().reshape(-1,1))
-                    actLabels = torch.cat((actLabels, torch.argmax(batch['labels'], 1).float().reshape(-1,1)), 0)
-            for j in range(0, m, self.BATCH_SIZE):
-                with torch.no_grad():
-                    preds = F.normalize(self.model(self.train_img_anchor[j: j + self.BATCH_SIZE].cuda()), p=2)
-                    trainPreds = torch.cat((trainPreds, preds.cpu()), 0)
-            for row in range(0, n):
-                for col in range(0, m):
-                    distMatrix[row, col] = d(testPreds[row].reshape(1,-1).cuda(),
-                                                               trainPreds[col].reshape(1,-1).cuda()).cpu()
-                    torch.cuda.empty_cache()
-            for r in range(0, n):
-                ind = torch.argmin(distMatrix[r])
-                predLabels[r, 0] = self.train_label_anchor[ind]
-                
-            preds = predLabels.numpy()
-            acts = actLabels.numpy()
-            df = pd.DataFrame(preds, columns=['predict'])
-            df['actuals'] = acts
-            print('Unseen test set accuracy: {}'.format(df[df['predict'] == df['actuals']].shape[0]*100.0/df.shape[0]))
-            print('Unseen test set f1_score: {}'.format(f1_score(acts, preds, average='macro')))
-            torch.save(self.model, 'efigi_siamese_triplet')
-            print('Model saved: efigi_siamese_triplet')
-        elif self.modelType == 'pair':
-            print('Evaluation beginning')
-            n = len(self.unseen_dl.dataset.subset)
-            m = self.train_sample_size
-            distMatrix = torch.empty((n, m))
-            predLabels = torch.empty((n, 1))
-            actLabels = torch.empty((0, 1))
-            trainPreds = torch.empty((0, self.outputSize))
+            self.distMatrix = torch.empty((n, m))
+            self.predLabels = torch.empty((n, 1))
+            self.actLabels = torch.empty((0, 1))
+            self.trainPreds = torch.empty((0, self.outputSize))
             cos = nn.CosineSimilarity(dim=1, eps=1e-6)
             d = nn.PairwiseDistance(p=2)
             #euclidean_distance = cos(features_1, features_2)
@@ -401,84 +491,200 @@ class mySiamese:
                 with torch.no_grad():
                     testPreds = self.model(batch['image'].cuda())
                     #actLabels = torch.argmax(batch['labels'], 1).float().reshape(-1,1))
-                    actLabels = torch.cat((actLabels, torch.argmax(batch['labels'], 1).float().reshape(-1,1)), 0)
+                    self.actLabels = torch.cat((self.actLabels, torch.argmax(batch['labels'], 1).float().reshape(-1,1)), 0)
             for j in range(0, m, self.BATCH_SIZE):
                 with torch.no_grad():
-                    preds = self.model(self.train_img_1[j: j + self.BATCH_SIZE].cuda())
-                    trainPreds = torch.cat((trainPreds, preds.cpu()), 0)
+                    if self.mining == 'random':
+                        preds = self.model(self.train_img_anchor[j: j + self.BATCH_SIZE].cuda())
+                    if self.mining == 'hard':
+                        preds = self.model(self.train_hard_anchors_img[j: j + self.BATCH_SIZE].cuda())
+                    self.trainPreds = torch.cat((self.trainPreds, preds.cpu()), 0)
             for row in range(0, n):
                 for col in range(0, m):
-                    distMatrix[row, col] = d(testPreds[row].reshape(1,-1).cuda(),
-                                                               trainPreds[col].reshape(1,-1).cuda()).cpu()
+                   self.distMatrix[row, col] = d(testPreds[row].reshape(1,-1).cuda(),
+                                                               self.trainPreds[col].reshape(1,-1).cuda()).cpu()
+                   torch.cuda.empty_cache()
+            for r in range(0, n):
+                ind = torch.argmin(self.distMatrix[r])
+                if self.mining == 'random':
+                    self.predLabels[r, 0] = self.train_label_anchor[ind]
+                if self.mining == 'hard':
+                    self.predLabels[r, 0] = self.train_hard_anchors_labels[ind]
+                
+            preds = self.predLabels.numpy()
+            acts = self.actLabels.numpy()
+            df = pd.DataFrame(preds, columns=['predict'])
+            df['actuals'] = acts
+            print('Unseen test set accuracy: {}'.format(df[df['predict'] == df['actuals']].shape[0]*100.0/df.shape[0]))
+            print('Unseen test set f1_score: {}'.format(f1_score(acts, preds, average='macro')))
+        elif self.modelType == 'pair':
+            print('Evaluation beginning')
+            n = len(self.unseen_dl.dataset.subset)
+            m = self.train_sample_size
+            self.distMatrix = torch.empty((n, int(m/2)))
+            self.predLabels = torch.empty((n, 1))
+            self.actLabels = torch.empty((0, 1))
+            self.trainPreds = torch.empty((0, self.outputSize))
+            cos = nn.CosineSimilarity(dim=1, eps=1e-6)
+            d = nn.PairwiseDistance(p=2)
+            #euclidean_distance = cos(features_1, features_2)
+            self.model.eval()
+            for i, batch in enumerate(self.unseen_dl):
+                with torch.no_grad():
+                    testPreds = self.model(batch['image'].cuda())
+                    #actLabels = torch.argmax(batch['labels'], 1).float().reshape(-1,1))
+                    self.actLabels = torch.cat((self.actLabels, torch.argmax(batch['labels'], 1).float().reshape(-1,1)), 0)
+            for j in range(0, m, self.BATCH_SIZE):
+                with torch.no_grad():
+                    if self.mining == 'random':
+                        preds = self.model(self.train_img_1[j: j + self.BATCH_SIZE].cuda())
+                    if self.mining == 'hard':
+                        preds = self.model(self.train_hard_img_1[j: j + self.BATCH_SIZE].cuda())
+                    for ii in range(0, preds.shape[0], 2):
+                        self.trainPreds = torch.cat((self.trainPreds, preds[ii].reshape(1,-1).cpu()), 0)
+            for row in range(0, n):
+                for col in range(0, int(m/2)):
+                    self.distMatrix[row, col] = d(testPreds[row].reshape(1,-1).cuda(),
+                                                               self.trainPreds[col].reshape(1,-1).cuda()).cpu()
                     torch.cuda.empty_cache()
             for r in range(0, n):
-                ind = torch.argmin(distMatrix[r])
-                predLabels[r, 0] = self.train_label_1[ind]
-                
-            preds = predLabels.numpy()
-            acts = actLabels.numpy()
+                ind = torch.argmin(self.distMatrix[r])
+                if self.mining == 'random':
+                    self.predLabels[r, 0] = self.train_label_1[ind*2]
+                if self.mining == 'hard':
+                    self.predLabels[r, 0] = self.train_hard_label_1[ind*2]
+            
+            preds = self.predLabels.numpy()
+            acts = self.actLabels.numpy()
             df = pd.DataFrame(preds, columns=['predict'])
             df['actuals'] = acts
             print('Unseen test set (contrastive) accuracy: {}'.format(df[df['predict'] == df['actuals']].shape[0]*100.0/df.shape[0]))
             print('Unseen test set (contrastive) f1_score: {}'.format(f1_score(acts, preds, average='macro')))
-            torch.save(self.model, 'efigi_siamese_pair')
-            print('Model saved: efigi_siamese_pair')
-        return self.model, predLabels, actLabels
     
     def evaluate2(self, epochs=5):
-        self.model = self.train(epochs=epochs)
         if self.modelType == 'triplet':
             print('Evaluation beginning')
             n = len(self.unseen_dl.dataset.subset)
             unique_labs = torch.unique(self.train_label_anchor)
             m = self.train_sample_size
             n_classes = len(unique_labs)
-            avg_fts = torch.empty((n_classes, self.outputSize))
-            distMatrix = torch.empty((n, n_classes))
-            predLabels = torch.empty((n, 1))
-            actLabels = torch.empty((0, 1))
-            trainPreds = torch.empty((0, self.outputSize))
+            self.avg_fts = torch.empty((0, self.outputSize))
+            self.distMatrix = torch.empty((n, n_classes))
+            self.predLabels = torch.empty((n, 1))
+            self.actLabels = torch.empty((0, 1))
+            self.trainPreds = torch.empty((0, self.outputSize))
             cos = nn.CosineSimilarity(dim=1, eps=1e-6)
             d = nn.PairwiseDistance(p=2)
             self.model.eval()
             for i, batch in enumerate(self.unseen_dl):
                 with torch.no_grad():
-                    testPreds = self.model(batch['image'].cuda())
-                    actLabels = torch.cat((actLabels, torch.argmax(batch['labels'], 1).float().reshape(-1,1)), 0)
+                    self.testPreds = self.model(batch['image'].cuda())
+                    self.actLabels = torch.cat((self.actLabels, torch.argmax(batch['labels'], 1).float().reshape(-1,1)), 0)
             for j in range(0, m, self.BATCH_SIZE):
                 with torch.no_grad():
-                    preds = self.model(self.train_img_anchor[j: j + self.BATCH_SIZE].cuda())
-                    trainPreds = torch.cat((trainPreds, preds.cpu()), 0)
+                    if self.mining == 'random':
+                        preds = self.model(self.train_img_anchor[j: j + self.BATCH_SIZE].cuda())
+                    if self.mining == 'hard':
+                        preds = self.model(self.train_hard_anchors_img[j: j + self.BATCH_SIZE].cuda())
+                    self.trainPreds = torch.cat((self.trainPreds, preds.cpu()), 0)
             
             for lab in unique_labs:
-                inds = np.where(self.train_label_anchor == lab)[0]
+                if self.mining == 'random':
+                    inds = np.where(self.train_label_anchor == lab)[0]
+                if self.mining == 'hard':
+                    inds = np.where(self.train_hard_anchors_labels == lab.float())[0]
                 fts = torch.empty((0, self.outputSize))
                 for k in range(0, inds.shape[0], self.BATCH_SIZE):
                     with torch.no_grad():
                         #preds = model(train_img_anchor[inds[j: j + BATCH_SIZE]].cuda())
-                        predss = trainPreds[inds[k: k + self.BATCH_SIZE]]
+                        predss = self.trainPreds[inds[k: k + self.BATCH_SIZE]]
                         fts = torch.cat((fts, predss.cpu()), 0)
                 avg = torch.mean(fts, 0).reshape(1,-1)
-                avg_fts = torch.cat((avg_fts, avg ), 0)
+                self.avg_fts = torch.cat((self.avg_fts, avg ), 0)
             
             for row in range(0, n):
                 for col in range(0, n_classes):
-                    distMatrix[row, col] = d(testPreds[row].reshape(1,-1).cuda(),
-                                                               avg_fts[col].reshape(1,-1).cuda()).cpu()
+                    self.distMatrix[row, col] = d(self.testPreds[row].reshape(1,-1).cuda(),
+                                                               self.avg_fts[col].reshape(1,-1).cuda()).cpu()
                     #torch.cuda.empty_cache()
             for r in range(0, n):
-                predLabels[r, 0] = torch.argmin(distMatrix[r])
+                self.predLabels[r, 0] = torch.argmin(self.distMatrix[r])
                 
-            preds = predLabels.numpy()
-            acts = actLabels.numpy()
+            preds = self.predLabels.numpy()
+            acts = self.actLabels.numpy()
             df = pd.DataFrame(preds, columns=['predict'])
             df['actuals'] = acts
             print('Unseen test set accuracy: {}'.format(df[df['predict'] == df['actuals']].shape[0]*100.0/df.shape[0]))
             print('Unseen test set f1_score: {}'.format(f1_score(acts, preds, average='macro')))
-            torch.save(self.model, 'efigi_siamese_triplet')
-            print('Model saved: efigi_siamese_triplet')
-        
-        return self.model, testPreds, trainPreds, distMatrix, self.train_label_anchor, predLabels, actLabels, avg_fts
+        elif self.modelType == 'pair':
+            print('Evaluation beginning')
+            n = len(self.unseen_dl.dataset.subset)
+            m = self.train_sample_size
+            self.predLabels = torch.empty((n, 1))
+            self.actLabels = torch.empty((0, 1))
+            self.trainPreds = torch.empty((0, self.outputSize))
+            if self.mining == 'random':
+                self.unique_labs = torch.unique(self.train_label_1)
+            if self.mining == 'hard':
+                self.unique_labs = torch.unique(self.train_hard_label_1)
+            cos = nn.CosineSimilarity(dim=1, eps=1e-6)
+            self.trainLabels = torch.empty((0, 1))
+            
+            if self.mining == 'random':
+                for jj in range(0, self.train_label_1.shape[0], 2):
+                    self.trainLabels = torch.cat((self.trainLabels, self.train_label_1[jj].reshape(1,-1).float()), 0)
+            if self.mining == 'hard':
+                for jj in range(0, self.train_hard_label_1.shape[0], 2):
+                    self.trainLabels = torch.cat((self.trainLabels, self.train_hard_label_1[jj].reshape(1,-1)), 0)
+            self.avg_fts = torch.empty((0, self.outputSize))
+            self.distMatrix = torch.empty((n,len(self.unique_labs)))
+            d = nn.PairwiseDistance(p=2)
+            #euclidean_distance = cos(features_1, features_2)
+            self.model.eval()
+            for i, batch in enumerate(self.unseen_dl):
+                with torch.no_grad():
+                    testPreds = self.model(batch['image'].cuda())
+                    #actLabels = torch.argmax(batch['labels'], 1).float().reshape(-1,1))
+                    self.actLabels = torch.cat((self.actLabels, torch.argmax(batch['labels'], 1).float().reshape(-1,1)), 0)
+            for j in range(0, m, self.BATCH_SIZE):
+                with torch.no_grad():
+                    if self.mining == 'random':
+                        preds = self.model(self.train_img_1[j: j + self.BATCH_SIZE].cuda())
+                    if self.mining == 'hard':
+                        preds = self.model(self.train_hard_img_1[j: j + self.BATCH_SIZE].cuda())
+                    for ii in range(0, preds.shape[0], 2):
+                        self.trainPreds = torch.cat((self.trainPreds, preds[ii].reshape(1,-1).cpu()), 0)
+            
+            for lab in self.unique_labs:
+                inds = np.where(self.trainLabels == lab.float())[0]
+                fts = torch.empty((0, self.outputSize))
+                for k in range(0, inds.shape[0], self.BATCH_SIZE):
+                    with torch.no_grad():
+                        #preds = model(train_img_anchor[inds[j: j + BATCH_SIZE]].cuda())
+                        predss = self.trainPreds[inds[k: k + self.BATCH_SIZE]]
+                        fts = torch.cat((fts, predss.cpu()), 0)
+                avg = torch.mean(fts, 0).reshape(1,-1)
+                self.avg_fts = torch.cat((self.avg_fts, avg ), 0)
+            
+            for row in range(0, n):
+                for col in range(0, len(self.unique_labs)):
+                    self.distMatrix[row, col] = d(testPreds[row].reshape(1,-1).cuda(),
+                                                               self.avg_fts[col].reshape(1,-1).cuda()).cpu()
+                    torch.cuda.empty_cache()
+            for r in range(0, n):
+                ind = torch.argmin(self.distMatrix[r])
+                if self.mining =='random':
+                    self.predLabels[r, 0] = ind
+                if self.mining =='hard':
+                    self.predLabels[r, 0] = ind
+            
+            preds = self.predLabels.numpy()
+            acts = self.actLabels.numpy()
+            df = pd.DataFrame(preds, columns=['predict'])
+            df['actuals'] = acts
+            print('Unseen test set (contrastive) accuracy: {}'.format(df[df['predict'] == df['actuals']].shape[0]*100.0/df.shape[0]))
+            print('Unseen test set (contrastive) f1_score: {}'.format(f1_score(acts, preds, average='macro')))
+
 
       
     
