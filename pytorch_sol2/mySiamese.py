@@ -26,6 +26,7 @@ from samplers import *
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import f1_score
 from pandas_ml import ConfusionMatrix
+from sklearn.metrics import confusion_matrix
 import matplotlib.pyplot as plt
 import random
 
@@ -473,8 +474,15 @@ class mySiamese:
         plt.legend(frameon=False)
         plt.show()
         
-    
-    def evaluate(self):
+    def show_cf(self, preds, acts, cf_type):
+        cf = confusion_matrix(preds, acts)
+        C = cf / cf.astype(np.float).sum(axis=1, keepdims=True)
+        if cf_type == 'numbers':
+            print("Confusion matrix:\n%s" % cf)
+        if cf_type == 'percentage':
+            print("Confusion matrix:\n%s" % C) 
+                
+    def evaluate(self, f1_='weighted', cf_type='numbers'):
         if self.modelType == 'triplet':
             print('Evaluation beginning')
             n = len(self.unseen_dl.dataset.subset)
@@ -516,7 +524,12 @@ class mySiamese:
             df = pd.DataFrame(preds, columns=['predict'])
             df['actuals'] = acts
             print('Unseen test set accuracy: {}'.format(df[df['predict'] == df['actuals']].shape[0]*100.0/df.shape[0]))
-            print('Unseen test set f1_score: {}'.format(f1_score(acts, preds, average='macro')))
+            if f1_ == 'notWeighted':
+                f1 = f1_score(acts, preds, average='macro')
+            if f1_ == 'weighted':
+                f1 = f1_score(acts, preds, average='weighted')
+            print('Unseen test set {} f1_score: {}'.format(f1_, f1)) 
+            self.show_cf(preds, acts, cf_type)
         elif self.modelType == 'pair':
             print('Evaluation beginning')
             n = len(self.unseen_dl.dataset.subset)
@@ -559,9 +572,14 @@ class mySiamese:
             df = pd.DataFrame(preds, columns=['predict'])
             df['actuals'] = acts
             print('Unseen test set (contrastive) accuracy: {}'.format(df[df['predict'] == df['actuals']].shape[0]*100.0/df.shape[0]))
-            print('Unseen test set (contrastive) f1_score: {}'.format(f1_score(acts, preds, average='macro')))
+            if f1_ == 'notWeighted':
+                f1 = f1_score(acts, preds, average='macro')
+            if f1_ == 'weighted':
+                f1 = f1_score(acts, preds, average='weighted')
+            print('Unseen test set {} f1_score: {}'.format(f1_, f1)) 
+            self.show_cf(preds, acts, cf_type)
     
-    def evaluate2(self, epochs=5):
+    def evaluate2(self, f1_='weighted', cf_type='numbers'):
         if self.modelType == 'triplet':
             print('Evaluation beginning')
             n = len(self.unseen_dl.dataset.subset)
@@ -615,7 +633,12 @@ class mySiamese:
             df = pd.DataFrame(preds, columns=['predict'])
             df['actuals'] = acts
             print('Unseen test set accuracy: {}'.format(df[df['predict'] == df['actuals']].shape[0]*100.0/df.shape[0]))
-            print('Unseen test set f1_score: {}'.format(f1_score(acts, preds, average='macro')))
+            if f1_ == 'notWeighted':
+                f1 = f1_score(acts, preds, average='macro')
+            if f1_ == 'weighted':
+                f1 = f1_score(acts, preds, average='weighted')
+            print('Unseen test set {} f1_score: {}'.format(f1_, f1)) 
+            self.show_cf(preds, acts, cf_type)
         elif self.modelType == 'pair':
             print('Evaluation beginning')
             n = len(self.unseen_dl.dataset.subset)
@@ -683,7 +706,12 @@ class mySiamese:
             df = pd.DataFrame(preds, columns=['predict'])
             df['actuals'] = acts
             print('Unseen test set (contrastive) accuracy: {}'.format(df[df['predict'] == df['actuals']].shape[0]*100.0/df.shape[0]))
-            print('Unseen test set (contrastive) f1_score: {}'.format(f1_score(acts, preds, average='macro')))
+            if f1_ == 'notWeighted':
+                f1 = f1_score(acts, preds, average='macro')
+            if f1_ == 'weighted':
+                f1 = f1_score(acts, preds, average='weighted')
+            print('Unseen test set {} f1_score: {}'.format(f1_, f1)) 
+            self.show_cf(preds, acts, cf_type)
 
 
       
