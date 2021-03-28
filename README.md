@@ -62,8 +62,6 @@
 ## About The Project
 In this repo we provide code for various machine learning solutions for galaxy classification. 
 
-A list of commonly used resources that I find helpful are listed in the acknowledgements.
-
 ### Built With
 * [Anaconda](https://www.anaconda.com/)
 
@@ -72,11 +70,7 @@ A list of commonly used resources that I find helpful are listed in the acknowle
 <!-- GETTING STARTED -->
 ## Getting Started
 
-In order to properly make use of the code in this repo there are a few things that need to be done after you've cloned it. 
-
-### Prerequisites
-
-This is an example of how to list things you need to use the software and how to install them.
+In order to properly make use of this repo, please follow the Installation and Usage instructions very carefully. 
 
 ### Installation
 
