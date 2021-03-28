@@ -82,8 +82,7 @@ In order to properly make use of this repo, please follow the Installation and U
   ```sh
    pip install -r requirements.txt
   ```
-4. Download the datasets folder from the drive link, replace the repos 'datasets' folder with the downloaded one that contains the images
-   [Drive link](https://drive.google.com/drive/folders/1vVwKTgbI9vNsAEb47KQKD7lzl1vkWiVb?usp=sharing)
+4. Download the datasets folder from this [Google Drive Link](https://drive.google.com/drive/folders/1vVwKTgbI9vNsAEb47KQKD7lzl1vkWiVb?usp=sharing). Replace the 'datasets' folder in the cloned repo folder with the downloaded datasets folder that contains the images. 
 
 
 
