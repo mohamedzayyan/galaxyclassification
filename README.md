@@ -62,9 +62,10 @@
 ## About The Project
 In this repo we provide code for various machine learning solutions for galaxy classification. 
 
-### Built With
+### Software
 * [Anaconda](https://www.anaconda.com/)
-
+* [Ubuntu 18.4] (https://releases.ubuntu.com/18.04/)
+* Python 3.7 (https://www.python.org/downloads/release/python-370/)
 
 
 <!-- GETTING STARTED -->
