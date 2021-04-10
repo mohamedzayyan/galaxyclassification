@@ -83,7 +83,7 @@ In order to properly make use of this repo, please follow the Installation and U
   ```sh
    pip install -r requirements.txt
   ```
-4. Download the datasets folder from this [Google Drive Link](https://drive.google.com/drive/folders/1vVwKTgbI9vNsAEb47KQKD7lzl1vkWiVb?usp=sharing). Replace the 'datasets' folder in the cloned repo folder with the downloaded datasets folder that contains the images. 
+4. Download the datasets folder from this [Google Drive Link](https://drive.google.com/drive/folders/1vVwKTgbI9vNsAEb47KQKD7lzl1vkWiVb?usp=sharing). Replace the 'datasets' folder in the cloned repo folder with the downloaded datasets folder that contains the images. The 'images_gz2' zipped folder must be extracted into the datasets folder so the folder structure reads 'datasets/images/'.
 
 
 
