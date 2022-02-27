@@ -52,6 +52,7 @@
     </li>
     <li><a href="#usage">Usage</a></li>
     <li><a href="#contact">Contact</a></li>
+    <li><a href="#citation">Citation</a></li>
     <li><a href="#acknowledgements">Acknowledgements</a></li>
   </ol>
 </details>
@@ -95,6 +96,56 @@ In order to properly make use of this repo, please follow the Installation and U
 3. The code in the 'efigiLSCE.ipynb' and 'gz2LSCE.ipynb' notebooks can be run now. This will create the Label Smoothing Cross-Entropy models. The order in which these notebooks are run is not important.
 4. After Step 3, we may now run the 'efigiDML.ipynb' and 'gz2DML.ipynb' notebooks. This will create the Deep Metric Learning models. The order in which these notebooks are run is not important.
 
+
+<!-- CITATION -->
+## Citation
+
+If you have used our framework, data or code for research purposes, you can cite our publications by:
+
+* M. Z. Variawa, T. L. Van Zyl and M. Woolway, "Transfer Learning and Deep Metric Learning for Automated Galaxy Morphology Representation," in IEEE Access, vol. 10, pp. 19539-19550, 2022, doi: 10.1109/ACCESS.2022.3150881.
+
+BibTex:
+```
+@ARTICLE{9709840,
+  author={Variawa, Mohamed Zayyan and Van Zyl, Terence L. and Woolway, Matthew},
+  journal={IEEE Access}, 
+  title={Transfer Learning and Deep Metric Learning for Automated Galaxy Morphology Representation}, 
+  year={2022},
+  volume={10},
+  number={},
+  pages={19539-19550},
+  doi={10.1109/ACCESS.2022.3150881}}
+```
+
+* M. Z. Variawa, T. L. van Zyl and M. Woolway, "Comparing Generalisation Using Crowd-Sourced vs Expert Labels for Galaxies Classification," 2020 7th International Conference on Soft Computing & Machine Intelligence (ISCMI), 2020, pp. 158-162, doi: 10.1109/ISCMI51676.2020.9311606.
+
+BibTex:
+```
+@INPROCEEDINGS{9311606,
+  author={Variawa, M. Z and van Zyl, T.L. and Woolway, M.},
+  booktitle={2020 7th International Conference on Soft Computing   Machine Intelligence (ISCMI)}, 
+  title={Comparing Generalisation Using Crowd-Sourced vs Expert Labels for Galaxies Classification}, 
+  year={2020},
+  volume={},
+  number={},
+  pages={158-162},
+  doi={10.1109/ISCMI51676.2020.9311606}}
+```
+
+* M. Z. Variawa, T. L. van Zyl and M. Woolway, "A rules-based and Transfer Learning approach for deriving the Hubble type of a galaxy from the Galaxy Zoo data," 2020 IEEE 23rd International Conference on Information Fusion (FUSION), 2020, pp. 1-7, doi: 10.23919/FUSION45008.2020.9190462.
+  
+BibTex:
+```
+@INPROCEEDINGS{9190462,
+  author={Variawa, M. Z and van Zyl, T. L and Woolway, M.},
+  booktitle={2020 IEEE 23rd International Conference on Information Fusion (FUSION)}, 
+  title={A rules-based and Transfer Learning approach for deriving the Hubble type of a galaxy from the Galaxy Zoo data}, 
+  year={2020},
+  volume={},
+  number={},
+  pages={1-7},
+  doi={10.23919/FUSION45008.2020.9190462}}
+```
 
 <!-- CONTACT -->
 ## Contact
